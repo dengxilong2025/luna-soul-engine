@@ -1,0 +1,7 @@
+# Add page IDs only after sharing those pages with your read-only Notion integration.
+# Keep this config generic if the repository is public.
+pages: []
+# Example:
+# pages:
+#   - id: "0123456789abcdef0123456789abcdef"
+#     title: "Bootstrap Protocol"
