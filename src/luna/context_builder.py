@@ -8,12 +8,51 @@ from luna import __version__
 from luna.notion_reader import NotionReader
 
 
+
+def _content_has_explicit_unexpanded_marker(content: str) -> bool:
+    if not content:
+        return False
+    return "[Unexpanded nested content:" in content or "[Unsupported/nested block:" in content
+
+
+def _unexpanded_entries_from_page(page: dict[str, Any]) -> list[dict[str, Any]]:
+    # Prefer structured metadata when present and non-empty.
+    value = page.get("unexpanded", None)
+    if isinstance(value, list) and value:
+        return list(value)
+    meta = page.get("meta")
+    if isinstance(meta, dict):
+        meta_value = meta.get("unexpanded")
+        if isinstance(meta_value, list) and meta_value:
+            return list(meta_value)
+    # Fall back to explicit bracketed markers only when metadata is empty/missing.
+    # Do not treat bare prose as unexpanded.
+    content = page.get("content", "") or ""
+    entries: list[dict[str, Any]] = []
+    import re
+    for match in re.finditer(r"\[Unexpanded nested content: type=([^;]+); id=([^\]]+)\]", content):
+        entries.append({"type": match.group(1).strip(), "masked_id": match.group(2).strip()})
+    for match in re.finditer(r"\[Unsupported/nested block: ([^;\]]+)", content):
+        entries.append({"type": match.group(1).strip(), "masked_id": "unknown"})
+    # Deduplicate exact duplicates
+    seen = set()
+    deduped = []
+    for item in entries:
+        key = (str(item.get("type")), str(item.get("masked_id")))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
+
+
 def _mask_page_id(page: dict[str, Any]) -> str:
     raw = page.get("page_id") or page.get("id") or page.get("source_id") or ""
     return NotionReader._mask_block_id(str(raw))
 
 
 def _canonical_text(status: Any, configured: Any, read: Any, pages: list[dict[str, Any]], roles: Any = None, failures: Any = None) -> str:
+    """Canonical serialization for the content fingerprint (SHA-256). This is a content fingerprint, not a signature, not proof of authenticity, and not proof the read was complete; presence never means OK/passed."""
     text = f"{status}\n{configured}\n{read}\n"
     ordered = sorted(pages, key=lambda p: _mask_page_id(p))
     for page in ordered:
@@ -45,12 +84,10 @@ def build_context_bundle(
     optional_failures = report.get("optional_failures", "unknown")
     roles = report.get("roles", {}) or {}
     failures = report.get("failures", []) or []
-    unexpanded_all: list[str] = []
+    unexpanded_entries: list[dict[str, Any]] = []
     for page in pages:
-        content = page.get("content", "") or ""
-        if "Unexpanded nested content" in content or "contents not expanded" in content or "children not read" in content:
-            unexpanded_all.append(page.get("title") or "Untitled page")
-    # Also include meta unexpanded if present in page dict? Pages from cli don't carry meta; content marker covers it.
+        for item in _unexpanded_entries_from_page(page):
+            unexpanded_entries.append(item)
 
     digest = hashlib.sha256(
         _canonical_text(status, configured, read, pages, roles, failures).encode("utf-8")
@@ -102,9 +139,14 @@ def build_context_bundle(
     sections.append("")
 
     sections.extend(["## Unexpanded nested content", ""])
-    if unexpanded_all:
-        for title in unexpanded_all:
-            sections.append(f"- {title}: unexpanded nested content present")
+    if unexpanded_entries:
+        for item in unexpanded_entries:
+            if isinstance(item, dict):
+                typ = item.get("type", "unknown")
+                mid = item.get("masked_id", item.get("id", "unknown"))
+                sections.append(f"- type={typ}; masked_id={mid} ({typ}: {mid})")
+            else:
+                sections.append(f"- {item}")
     else:
         sections.append("- None")
     sections.append("")
@@ -114,6 +156,7 @@ def build_context_bundle(
     sections.append("- Live Notion access is opt-in only (LUNA_NOTION_LIVE=1 and NOTION_TOKEN).")
     sections.append("- This bundle is generated locally; it is not automatically injected into any session.")
     sections.append("- Partial or FAILED bundles still include a digest of whatever was read.")
+    sections.append("- The Integrity-SHA256 is a content fingerprint only: not a signature, not proof of authenticity, and not proof the read was complete. Its presence never means OK/passed.")
     sections.append("")
 
     if failures:

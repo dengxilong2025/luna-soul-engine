@@ -108,3 +108,40 @@ def test_required_unsupported_placeholder_is_degraded():
     pages, report = _read_manifest(reader, [{"id": "a"}])
     assert report["status"] == "DEGRADED"
     assert report["unexpanded_required"] is True
+
+
+def test_prose_unexpanded_phrase_does_not_degrade():
+    reader = FakeReader({"a": ("Title", "Note: Unexpanded nested content may appear in docs\ncontents not expanded sometimes", {"has_unexpanded": False, "unexpanded": []})})
+    pages, report = _read_manifest(reader, [{"id": "a"}])
+    assert report["status"] == "OK"
+    assert report["unexpanded_required"] is False
+
+    reader2 = FakeReader({"a": ("Title", "Note: Unexpanded nested content may appear in docs\ncontents not expanded sometimes")})
+    pages2, report2 = _read_manifest(reader2, [{"id": "a"}])
+    assert report2["status"] == "OK"
+    assert report2["unexpanded_required"] is False
+
+
+def test_bundle_unexpanded_section_uses_metadata():
+    from luna.context_builder import build_context_bundle
+
+    pages = [{"title": "Page", "content": "body", "unexpanded": [{"type": "toggle", "masked_id": "abcd…1234"}]}]
+    bundle = build_context_bundle(pages)
+    section = bundle.split("## Unexpanded nested content", 1)[1].split("## Limits", 1)[0]
+    assert "type=toggle" in section
+    assert "masked_id=abcd…1234" in section
+    assert "- None" not in section
+
+
+def test_role_key_collision_does_not_overwrite():
+    # No explicit roles; same title would previously overwrite roles map.
+    reader = FakeReader({"a": ("Same", "one"), "b": ("Same", "two")})
+    pages, report = _read_manifest(reader, [
+        {"id": "a", "title": "Same"},
+        {"id": "b", "title": "Same", "required": False},
+    ])
+    assert len(pages) == 2
+    assert report["status"] == "OK"
+    assert "Same" in report["roles"]
+    assert any(k.startswith("Same#pages[") for k in report["roles"])
+    assert set(report["roles"].values()) == {"OK"}

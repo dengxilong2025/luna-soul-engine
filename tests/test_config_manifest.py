@@ -42,3 +42,16 @@ def test_manifest_rejects_empty_role_string(tmp_path):
     path.write_text('pages:\n  - id: "abc"\n    role: "   "\n', encoding="utf-8")
     with pytest.raises(ValueError, match="role"):
         load_config(path)
+
+
+def test_manifest_rejects_duplicate_roles(tmp_path):
+    path = tmp_path / "sources.yaml"
+    path.write_text(
+        'pages:\n  - id: "page-alpha"\n    role: bootstrap_protocol\n  - id: "page-beta"\n    role: bootstrap_protocol\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"duplicate role 'bootstrap_protocol'") as exc_info:
+        load_config(path)
+    message = str(exc_info.value)
+    assert "page-alpha" not in message
+    assert "page-beta" not in message

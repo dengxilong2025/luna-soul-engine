@@ -2,6 +2,27 @@
 
 ## v0.3.0
 
+- Live `notion_live` pytest performs real read-only calls when opted in; failures are not skipped.
+- Unexpanded detection prefers structured meta; bare prose phrases do not degrade.
+- Pagination guards: repeated `next_cursor` and `MAX_BLOCK_PAGES` cap → explicit error.
+- Reject duplicate non-empty manifest roles without exposing page IDs.
+Gap-fill (missing tests + small polish):
+- live pytest real calls
+- sources.yaml gitignored
+- unexpanded meta-primary
+- pagination loop/cap
+- duplicate roles
+- digest fingerprint wording
+
+Closing fix round (LUNA-approved):
+- Rewrite live Notion pytest with opt-in skipif and masked summary only.
+- Gitignore `config/sources.yaml`; keep example placeholders.
+- Unexpanded false positive fixed: bracketed markers only; structured unexpanded metadata drives bundle section.
+- Pagination loop guard: repeated cursor and 50-page cap raise `NotionPaginationError`.
+- Role collision validation raises `ValueError` with deterministic message.
+- Integrity digest documented as content fingerprint, not signature/authenticity/completeness proof.
+- Network isolation coverage for pure unit paths.
+
 - Count unsupported/nested block placeholders toward unexpanded completeness (required pages → DEGRADED).
 - Scrub bootstrap top-level exceptions; diagnose catches YAML errors without crashing.
 - Distinguish pagination_error (missing cursor) from incomplete_response (bad results).

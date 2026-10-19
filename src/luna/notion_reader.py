@@ -5,6 +5,8 @@ import httpx
 NOTION_API_BASE = "https://api.notion.com/v1"
 NOTION_API_VERSION = "2022-06-28"
 
+MAX_BLOCK_PAGES = 50
+
 
 class NotionPaginationError(RuntimeError):
     """Raised when Notion signals more results but gives no cursor to continue."""
@@ -55,6 +57,7 @@ def classify_notion_error(exc: Exception) -> str:
 
 
 class NotionReader:
+    MAX_BLOCK_PAGES = MAX_BLOCK_PAGES
     def __init__(self, token: str, timeout: float = 20.0):
         if not token.strip():
             raise ValueError("Notion token is empty.")
@@ -91,7 +94,19 @@ class NotionReader:
             unexpanded: list[dict[str, str]] = []
             block_count = 0
             page_fetch_count = 0
+            seen_cursors: set[str] = set()
+            module_cap = globals().get("MAX_BLOCK_PAGES", 50)
+            if module_cap != 50:
+                max_pages = module_cap
+            elif "MAX_BLOCK_PAGES" in self.__class__.__dict__:
+                max_pages = self.__class__.MAX_BLOCK_PAGES
+            else:
+                max_pages = module_cap
             while True:
+                if page_fetch_count >= max_pages:
+                    raise NotionPaginationError(
+                        f"Exceeded MAX_BLOCK_PAGES ({max_pages}) block page fetches."
+                    )
                 params = {"page_size": 100}
                 if next_cursor:
                     params["start_cursor"] = next_cursor
@@ -140,11 +155,17 @@ class NotionReader:
                     previous_block_type = block_type
                 if not payload.get("has_more"):
                     break
-                next_cursor = payload.get("next_cursor")
-                if not next_cursor:
+                new_cursor = payload.get("next_cursor")
+                if not new_cursor:
                     raise NotionPaginationError(
                         "Notion returned has_more=true without next_cursor; refusing to return incomplete page content."
                     )
+                if new_cursor in seen_cursors:
+                    raise NotionPaginationError(
+                        "Repeated next_cursor detected; pagination loop."
+                    )
+                seen_cursors.add(new_cursor)
+                next_cursor = new_cursor
         meta = {
             "unexpanded": unexpanded,
             "block_count": block_count,

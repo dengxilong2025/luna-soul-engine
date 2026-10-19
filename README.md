@@ -21,7 +21,7 @@ python -m pip install -e ".[dev]"
 ## Configure
 
 1. Set `NOTION_TOKEN` in your shell environment. Never commit the token.
-2. Edit `config/sources.yaml` and add the Notion page IDs to read.
+2. Copy `config/sources.yaml.example` to `config/sources.yaml` locally and add the Notion page IDs to read. `config/sources.yaml` is gitignored; keep real IDs out of version control.
 3. Share each selected page with your Notion integration and grant read-only access.
 
 ```bash
@@ -56,6 +56,8 @@ Page entries may include an optional `role` string (for example `bootstrap_proto
 ## Integrity digest
 
 Each bundle header contains `Integrity-SHA256`, a SHA-256 hex digest of a canonical serialization of status, configured/read counts, and page contents sorted by masked id. Partial or failed bundles still receive a digest of whatever was read.
+
+The digest is a **content fingerprint**, not a signature, not proof of authenticity, and not proof that the read was complete. Its presence never means OK/passed; OK/DEGRADED/FAILED rules are unchanged.
 
 ## Live Notion tests
 

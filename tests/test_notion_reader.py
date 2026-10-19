@@ -275,3 +275,50 @@ def test_child_page_block_sets_unexpanded(monkeypatch):
 
     assert meta["has_unexpanded"] is True
     assert "contents not expanded" in content
+
+
+def test_repeated_next_cursor_raises(monkeypatch):
+    fake = FakeClient([
+        page_response(),
+        FakeResponse({"results": [block("First")], "has_more": True, "next_cursor": "c1"}),
+        FakeResponse({"results": [block("Second")], "has_more": True, "next_cursor": "c1"}),
+    ])
+    monkeypatch.setattr("luna.notion_reader.httpx.Client", lambda **kwargs: fake)
+
+    from luna.notion_reader import NotionPaginationError, classify_notion_error
+
+    with pytest.raises(NotionPaginationError, match=r"Repeated|loop") as exc_info:
+        NotionReader("test-token").fetch_page("page-1")
+    assert classify_notion_error(exc_info.value) == "pagination_error"
+
+
+def test_exceeded_block_page_cap_raises(monkeypatch):
+    monkeypatch.setattr("luna.notion_reader.MAX_BLOCK_PAGES", 2)
+    monkeypatch.setattr(NotionReader, "MAX_BLOCK_PAGES", 2, raising=False)
+
+    fake = FakeClient([
+        page_response(),
+        FakeResponse({"results": [block("P1")], "has_more": True, "next_cursor": "c2"}),
+        FakeResponse({"results": [block("P2")], "has_more": True, "next_cursor": "c3"}),
+        FakeResponse({"results": [block("P3")], "has_more": True, "next_cursor": "c4"}),
+    ])
+    monkeypatch.setattr("luna.notion_reader.httpx.Client", lambda **kwargs: fake)
+
+    from luna.notion_reader import NotionPaginationError
+
+    with pytest.raises(NotionPaginationError, match=r"Exceeded|MAX_BLOCK_PAGES"):
+        NotionReader("test-token").fetch_page("page-1")
+
+
+def test_normal_multipage_under_cap_ok(monkeypatch):
+    fake = FakeClient([
+        page_response(),
+        FakeResponse({"results": [block("First")], "has_more": True, "next_cursor": "c2"}),
+        FakeResponse({"results": [block("Second")], "has_more": False}),
+    ])
+    monkeypatch.setattr("luna.notion_reader.httpx.Client", lambda **kwargs: fake)
+
+    title, content, meta = NotionReader("test-token").fetch_page("page-1")
+
+    assert content == "First\nSecond"
+    assert meta["page_fetch_count"] == 2

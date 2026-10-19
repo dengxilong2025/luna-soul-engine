@@ -12,6 +12,15 @@ from luna.notion_reader import NotionReader, classify_notion_error
 from luna.validator import diagnose
 
 
+
+
+def _content_has_explicit_unexpanded_marker(content: str) -> bool:
+    """Look for NotionReader's bracketed unexpanded markers, not bare prose."""
+    if not content:
+        return False
+    return "[Unexpanded nested content:" in content or "[Unsupported/nested block:" in content
+
+
 def _read_manifest(reader: NotionReader, entries: list[dict[str, Any]]) -> tuple[list[dict], dict[str, Any]]:
     pages: list[dict] = []
     failures: list[str] = []
@@ -54,7 +63,7 @@ def _read_manifest(reader: NotionReader, entries: list[dict[str, Any]]) -> tuple
                 )
             content = content or ""
             meta = meta or {}
-            has_unexpanded = bool(meta.get("has_unexpanded")) or "Unexpanded nested content" in content or "contents not expanded" in content
+            has_unexpanded = bool(meta.get("has_unexpanded")) or bool(meta.get("unexpanded")) or _content_has_explicit_unexpanded_marker(content)
             if has_unexpanded:
                 page_status = "DEGRADED"
                 if required:
@@ -65,6 +74,7 @@ def _read_manifest(reader: NotionReader, entries: list[dict[str, Any]]) -> tuple
                 "page_id": item["id"],
                 "role": item.get("role"),
                 "status": page_status,
+                "unexpanded": list(meta.get("unexpanded") or []),
             })
         except Exception as exc:
             error_type = classify_notion_error(exc)
@@ -79,6 +89,9 @@ def _read_manifest(reader: NotionReader, entries: list[dict[str, Any]]) -> tuple
                 required_failures += 1
             else:
                 optional_failures += 1
+        if role_key in roles:
+            # Avoid silent overwrite when title/id fallbacks collide (explicit roles already rejected in config).
+            role_key = f"{role_key}#pages[{index}]"
         roles[role_key] = page_status
 
     # Status rule (LUNA review):
