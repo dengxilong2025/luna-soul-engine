@@ -41,7 +41,14 @@ def _read_manifest(reader: NotionReader, entries: list[dict[str, Any]]) -> tuple
             else:
                 optional_failures += 1
 
-    if required_failures:
+    # Status rule (LUNA review):
+    # - empty config, zero successful reads, or any required failure → FAILED
+    # - optional failures with at least one success → DEGRADED
+    # - otherwise → OK
+    if not entries:
+        status = "FAILED"
+        failures.append("no pages configured in the source manifest")
+    elif required_failures or not pages:
         status = "FAILED"
     elif optional_failures:
         status = "DEGRADED"
@@ -103,7 +110,7 @@ def main() -> None:
         for failure in report["failures"]:
             print(f"- {failure}")
     print("Review the output locally before sharing it.")
-    if report["required_failures"]:
+    if report["status"] == "FAILED":
         # A bundle is retained for diagnosis, but is not declared usable.
         sys.exit(1)
 
