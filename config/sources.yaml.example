@@ -1,0 +1,16 @@
+# Copy/adapt locally. Never commit real Notion page IDs or tokens to a public repository.
+# Backwards-compatible: entries with only `id` are required by default.
+pages:
+  - id: "YOUR_BOOTSTRAP_PAGE_ID"
+    title: "Bootstrap Protocol"
+    expected_title: "Luna 超脑 Bootstrap Protocol"
+    required: true
+  - id: "YOUR_CONTINUITY_INDEX_PAGE_ID"
+    title: "Continuity Index"
+    required: true
+  - id: "YOUR_CURRENT_STATE_SNAPSHOT_PAGE_ID"
+    title: "Current State Snapshot"
+    required: true
+  - id: "YOUR_RELEVANT_TOPIC_PAGE_ID"
+    title: "Optional topic"
+    required: false

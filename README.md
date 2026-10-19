@@ -1,4 +1,4 @@
-# Luna Soul Engine v0.1.1
+# Luna Soul Engine v0.2.0
 
 A small, auditable Python CLI for checking configuration and generating a manual session-restoration bundle from selected Notion pages.
 

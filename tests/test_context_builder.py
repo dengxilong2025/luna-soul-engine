@@ -11,9 +11,9 @@ def test_builds_bundle_with_page_content():
     assert "# Luna Session Restoration Bundle" in bundle
     assert "## Bootstrap" in bundle
     assert "Start here." in bundle
-    assert "v0.1.1" in bundle
+    assert "v0.2.0" in bundle
 
 
 def test_empty_pages_are_explicit():
     bundle = build_context_bundle([], generated_at=datetime(2026, 1, 2, tzinfo=timezone.utc))
-    assert "No pages configured" in bundle
+    assert "No pages were successfully read" in bundle

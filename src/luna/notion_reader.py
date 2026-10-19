@@ -89,5 +89,5 @@ class NotionReader:
                 return f"- [{'x' if checked else ' '}] {text}"
             return text
         if block_type in {"child_page", "child_database", "table", "column_list", "synced_block"}:
-            return f"[Unsupported/nested block: {block_type}; contents not expanded in v0.1.1]"
+            return f"[Unsupported/nested block: {block_type}; contents not expanded in v0.2.0]"
         return ""
