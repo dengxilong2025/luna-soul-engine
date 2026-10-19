@@ -7,6 +7,38 @@ from luna.config import load_config
 from luna.notion_reader import NotionReader
 
 
+def classify_title_match(actual_title, expected_title) -> str:
+    """Classify live title-check result without contacting Notion.
+
+    Returns:
+      - "matched" / "mismatched" when expected_title is configured (non-blank)
+      - "not_configured" when expected_title is missing/None/blank
+    """
+    if expected_title is None or str(expected_title).strip() == "":
+        return "not_configured"
+    if str(actual_title).strip() == str(expected_title).strip():
+        return "matched"
+    return "mismatched"
+
+
+def test_title_match_unset_is_not_configured():
+    assert classify_title_match("Any Title", None) == "not_configured"
+    assert classify_title_match("Any Title", None) != "matched"
+
+
+def test_title_match_blank_is_not_configured():
+    assert classify_title_match("Any Title", "") == "not_configured"
+    assert classify_title_match("Any Title", "   ") == "not_configured"
+    assert classify_title_match("Any Title", "\t") == "not_configured"
+    assert classify_title_match("Any Title", "") != "matched"
+
+
+def test_title_match_configured_match_and_mismatch():
+    assert classify_title_match("Hello", "Hello") == "matched"
+    assert classify_title_match(" Hello ", "Hello") == "matched"
+    assert classify_title_match("Hello", "Other") == "mismatched"
+
+
 @pytest.mark.notion_live
 @pytest.mark.skipif(
     os.getenv("LUNA_NOTION_LIVE") != "1" or not os.getenv("NOTION_TOKEN"),
@@ -28,18 +60,16 @@ def test_live_notion_readonly():
         assert len(result) == 3
         title, content, meta = result
         expected_title = entry.get("expected_title")
-        if expected_title is not None and str(expected_title).strip() != "":
+        title_match = classify_title_match(title, expected_title)
+        if title_match == "not_configured":
+            title_expected_missing += 1
+        else:
             title_checks_run += 1
-            matched = str(title).strip() == str(expected_title).strip()
-            if matched:
+            if title_match == "matched":
                 title_checks_matched += 1
-            title_match = "matched" if matched else "mismatched"
-            assert matched, (
+            assert title_match == "matched", (
                 f"title mismatch for role={entry.get('role')!r} id_last4={str(entry['id'])[-4:]}"
             )
-        else:
-            title_expected_missing += 1
-            title_match = "not_configured"
         assert meta.get("page_fetch_count", 0) >= 1
         assert meta.get("block_count", 0) >= 0
         unexpanded_count = len(meta.get("unexpanded") or [])
