@@ -42,6 +42,7 @@ class NotionReader:
             next_cursor = None
             previous_block_type = None
             numbered_list_index = 0
+            warned_nested_ids: set[str] = set()
             while True:
                 params = {"page_size": 100}
                 if next_cursor:
@@ -61,6 +62,20 @@ class NotionReader:
                     text = self._block_text(block, numbered_list_index or 1)
                     if text:
                         lines.append(text)
+                    if block.get("has_children"):
+                        warning_key = str(block.get("id") or f"{block_type}:{len(lines)}")
+                        if warning_key not in warned_nested_ids:
+                            warned_nested_ids.add(warning_key)
+                            # Avoid stacking a second notice when _block_text already flagged nested content.
+                            already_flagged = bool(
+                                text
+                                and (
+                                    "contents not expanded" in text
+                                    or "Unexpanded nested content" in text
+                                )
+                            )
+                            if not already_flagged:
+                                lines.append(self._unexpanded_children_marker(block))
                     previous_block_type = block_type
                 if not payload.get("has_more"):
                     break
@@ -70,6 +85,35 @@ class NotionReader:
                         "Notion returned has_more=true without next_cursor; refusing to return incomplete page content."
                     )
         return title, "\n".join(lines).strip()
+
+    @staticmethod
+    def _mask_block_id(block_id: str) -> str:
+        """Mask token-like values; abbreviate long Notion-style ids in markers."""
+        value = (block_id or "").strip()
+        if not value:
+            return "unknown"
+        lowered = value.lower()
+        if (
+            lowered.startswith(("secret_", "ntn_", "bearer "))
+            or "token" in lowered
+            or lowered.startswith("sk-")
+        ):
+            return "<redacted>"
+        compact = value.replace("-", "")
+        if len(compact) >= 16 and all(ch in "0123456789abcdefABCDEF" for ch in compact):
+            return f"{value[:8]}…{value[-4:]}"
+        if len(value) > 16:
+            return f"{value[:6]}…{value[-4:]}"
+        return value
+
+    @classmethod
+    def _unexpanded_children_marker(cls, block: dict) -> str:
+        block_type = block.get("type") or "unknown"
+        masked_id = cls._mask_block_id(str(block.get("id") or ""))
+        return (
+            f"[Unexpanded nested content: type={block_type}; id={masked_id}; "
+            "children not read in v0.2.0]"
+        )
 
     @staticmethod
     def _block_text(block: dict, numbered_list_index: int = 1) -> str:

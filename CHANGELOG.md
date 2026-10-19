@@ -8,6 +8,7 @@
 - Required-page failures exit with code 1; optional-page failures keep successful pages.
 - Avoid overwriting a bundle generated within the same second.
 - Add mock-only tests for manifest validation and reader integrity. No new dependencies.
+- Flag Notion blocks with `has_children=true` in the recovery bundle (block type + masked block id); nested child content is still not recursively read.
 
 ## v0.1.1
 

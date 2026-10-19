@@ -49,7 +49,7 @@ The generated `output/` folder is ignored by Git because it may contain personal
 - Use a read-only Notion integration. The program only makes page/block retrieval requests.
 - The generated bundle can contain sensitive information. Keep it local and inspect it before use.
 - Block pagination is supported. If the API says more results exist but omits the next cursor, the reader now fails explicitly instead of silently producing incomplete content.
-- Nested child blocks are not recursively expanded in this version.
+- Nested child blocks are not recursively expanded in this version; when a block reports `has_children=true`, the recovery bundle includes an explicit unexpanded-nested-content marker (block type + masked block id) instead of silently dropping children.
 - Numbered list items are numbered sequentially within contiguous runs.
 - This project does not upload itself to GitHub or automatically inject context into a new ChatGPT session.
 - GitHub Actions runs mock/unit tests only; it does not require secrets or contact Notion.
@@ -63,5 +63,5 @@ python -m pytest -q
 ## Known limitations
 
 - Only ordinary text/rich-text block content is extracted; unsupported block types receive a short placeholder.
-- Nested blocks (for example, toggle contents) are not recursively read yet.
+- Nested blocks (for example, toggle contents) are not recursively read yet, but they are explicitly flagged in the recovery bundle so nothing is silently dropped.
 - Real Notion permissions, API availability, and page structure must be verified in the environment where this runs.
