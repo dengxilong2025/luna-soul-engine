@@ -77,3 +77,34 @@ def test_all_success_is_ok():
     assert len(pages) == 1
     assert report["status"] == "OK"
     assert report["failures"] == []
+
+
+def test_required_unexpanded_is_degraded():
+    reader = FakeReader({"a": ("Title", "body [Unexpanded nested content: x]")})
+    pages, report = _read_manifest(reader, [{"id": "a"}])
+    assert report["status"] == "DEGRADED"
+    assert report["unexpanded_required"] is True
+
+
+def test_required_unexpanded_via_meta():
+    reader = FakeReader({"a": ("Title", "body", {"has_unexpanded": True})})
+    pages, report = _read_manifest(reader, [{"id": "a"}])
+    assert report["status"] == "DEGRADED"
+
+
+def test_roles_reported_by_role_not_raw_id():
+    raw_id = "0123456789abcdef0123456789abcdef"
+    reader = FakeReader({raw_id: ("Ok", "body")})
+    pages, report = _read_manifest(reader, [{"id": raw_id, "role": "bootstrap_protocol"}])
+    assert "bootstrap_protocol" in report["roles"]
+    assert raw_id not in report["roles"]
+    from luna.context_builder import build_context_bundle
+    bundle = build_context_bundle(pages, manifest_report=report)
+    assert raw_id not in bundle
+
+
+def test_required_unsupported_placeholder_is_degraded():
+    reader = FakeReader({"a": ("Title", "[Unsupported/nested block: child_page; contents not expanded in v0.3.0]")})
+    pages, report = _read_manifest(reader, [{"id": "a"}])
+    assert report["status"] == "DEGRADED"
+    assert report["unexpanded_required"] is True

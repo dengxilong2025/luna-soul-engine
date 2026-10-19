@@ -65,7 +65,7 @@ def test_fetches_page_and_content(monkeypatch):
     ])
     monkeypatch.setattr("luna.notion_reader.httpx.Client", lambda **kwargs: fake)
 
-    title, content = NotionReader("test-token").fetch_page("page-1")
+    title, content, _ = NotionReader("test-token").fetch_page("page-1")
 
     assert title == "Bootstrap"
     assert content == "Hello\n- Point"
@@ -80,7 +80,7 @@ def test_follows_next_cursor(monkeypatch):
     ])
     monkeypatch.setattr("luna.notion_reader.httpx.Client", lambda **kwargs: fake)
 
-    _, content = NotionReader("test-token").fetch_page("page-1")
+    _, content, _ = NotionReader("test-token").fetch_page("page-1")
 
     assert content == "First\nSecond"
     assert fake.calls[2][1]["start_cursor"] == "cursor-2"
@@ -132,7 +132,7 @@ def test_heading_with_children_keeps_text_and_flags_nested(monkeypatch):
     ])
     monkeypatch.setattr("luna.notion_reader.httpx.Client", lambda **kwargs: fake)
 
-    _, content = NotionReader("test-token").fetch_page("page-1")
+    _, content, _ = NotionReader("test-token").fetch_page("page-1")
 
     assert "## Section" in content
     assert "Unexpanded nested content" in content
@@ -156,7 +156,7 @@ def test_empty_block_with_children_is_not_silently_dropped(monkeypatch):
     ])
     monkeypatch.setattr("luna.notion_reader.httpx.Client", lambda **kwargs: fake)
 
-    _, content = NotionReader("test-token").fetch_page("page-1")
+    _, content, _ = NotionReader("test-token").fetch_page("page-1")
 
     assert content.strip() != ""
     assert "Unexpanded nested content" in content
@@ -171,7 +171,7 @@ def test_normal_block_without_children_has_no_nested_warning(monkeypatch):
     ])
     monkeypatch.setattr("luna.notion_reader.httpx.Client", lambda **kwargs: fake)
 
-    _, content = NotionReader("test-token").fetch_page("page-1")
+    _, content, _ = NotionReader("test-token").fetch_page("page-1")
 
     assert content == "Plain"
     assert "Unexpanded nested content" not in content
@@ -190,7 +190,7 @@ def test_no_duplicate_nested_warning_for_same_block(monkeypatch):
     ])
     monkeypatch.setattr("luna.notion_reader.httpx.Client", lambda **kwargs: fake)
 
-    _, content = NotionReader("test-token").fetch_page("page-1")
+    _, content, _ = NotionReader("test-token").fetch_page("page-1")
 
     assert content.count("Parent") == 2
     assert content.count("Unexpanded nested content") == 1
@@ -204,3 +204,74 @@ def test_mask_redacts_token_like_block_ids():
     assert "secret_should_not_leak" not in marker
     assert "<redacted>" in marker
     assert "type=toggle" in marker
+
+
+def test_missing_results_raises(monkeypatch):
+    fake = FakeClient([page_response(), FakeResponse({})])
+    monkeypatch.setattr("luna.notion_reader.httpx.Client", lambda **kwargs: fake)
+    with pytest.raises(NotionPaginationError):
+        NotionReader("test-token").fetch_page("page-1")
+
+    fake = FakeClient([page_response(), FakeResponse({"has_more": False})])
+    monkeypatch.setattr("luna.notion_reader.httpx.Client", lambda **kwargs: fake)
+    with pytest.raises(NotionPaginationError):
+        NotionReader("test-token").fetch_page("page-1")
+
+
+def test_results_not_list_raises(monkeypatch):
+    fake = FakeClient([page_response(), FakeResponse({"results": {}})])
+    monkeypatch.setattr("luna.notion_reader.httpx.Client", lambda **kwargs: fake)
+    with pytest.raises(NotionPaginationError):
+        NotionReader("test-token").fetch_page("page-1")
+
+
+def test_missing_block_id_unexpanded_flagged(monkeypatch):
+    b1 = {"type": "paragraph", "paragraph": {"rich_text": [{"plain_text": "A"}]}, "has_children": True}
+    b2 = {"type": "paragraph", "paragraph": {"rich_text": [{"plain_text": "B"}]}, "has_children": True}
+    fake = FakeClient([page_response(), FakeResponse({"results": [b1, b2], "has_more": False})])
+    monkeypatch.setattr("luna.notion_reader.httpx.Client", lambda **kwargs: fake)
+
+    _, content, meta = NotionReader("test-token").fetch_page("page-1")
+
+    assert content.count("Unexpanded nested content") == 2
+    assert meta["has_unexpanded"] is True
+
+
+def test_classify_rate_limit_401_403_404():
+    from luna.notion_reader import classify_notion_error
+
+    cases = [(429, "rate_limit"), (401, "auth_failure"), (403, "permission_denied"), (404, "not_found")]
+    for status, expected in cases:
+        request = httpx.Request("GET", "https://api.notion.com/v1/test")
+        response = FakeResponse({}, status_code=status)
+        response.request = request
+        exc = httpx.HTTPStatusError("HTTP error", request=request, response=response)
+        assert classify_notion_error(exc) == expected
+
+    request = httpx.Request("GET", "https://api.notion.com/v1/test")
+    response = FakeResponse({"code": "object_not_found"}, status_code=404)
+    response.request = request
+    exc = httpx.HTTPStatusError("HTTP error", request=request, response=response)
+    assert classify_notion_error(exc) == "not_found"
+
+
+def test_fetch_page_returns_meta_tuple(monkeypatch):
+    fake = FakeClient([page_response(), FakeResponse({"results": [block("Hello")], "has_more": False})])
+    monkeypatch.setattr("luna.notion_reader.httpx.Client", lambda **kwargs: fake)
+
+    title, content, meta = NotionReader("test-token").fetch_page("page-1")
+
+    assert title == "Bootstrap"
+    assert meta["has_unexpanded"] is False
+    assert meta["block_count"] >= 1
+
+
+def test_child_page_block_sets_unexpanded(monkeypatch):
+    b = {"type": "child_page", "child_page": {"title": "Child"}, "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}
+    fake = FakeClient([page_response(), FakeResponse({"results": [b], "has_more": False})])
+    monkeypatch.setattr("luna.notion_reader.httpx.Client", lambda **kwargs: fake)
+
+    _, content, meta = NotionReader("test-token").fetch_page("page-1")
+
+    assert meta["has_unexpanded"] is True
+    assert "contents not expanded" in content

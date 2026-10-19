@@ -65,3 +65,81 @@ def test_bootstrap_required_failure_exits_1_and_writes_report(monkeypatch, tmp_p
     assert "- Optional failures: 0" in content
     assert "simulated missing page" in content
     assert "## Manifest issues" in content
+
+
+class OkReader:
+    def __init__(self, token):
+        self.token = token
+
+    def fetch_page(self, page_id):
+        return ("Ok", "body")
+
+
+def test_bootstrap_success_exits_0(monkeypatch, tmp_path, capsys):
+    config = tmp_path / "sources.yaml"
+    config.write_text('pages:\n  - id: "page-a"\n    expected_title: "Ok"\n', encoding="utf-8")
+    monkeypatch.setenv("NOTION_TOKEN", "test-token-not-a-real-secret")
+    monkeypatch.setattr("luna.cli.NotionReader", OkReader)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["luna", "bootstrap", "--config", str(config)])
+
+    from luna.cli import main
+
+    main()
+    out = capsys.readouterr().out
+    assert "Manifest status: OK" in out
+
+
+class DegradedReader:
+    def __init__(self, token):
+        self.token = token
+        self.calls = 0
+
+    def fetch_page(self, page_id):
+        if page_id == "page-b":
+            raise RuntimeError("missing")
+        return ("Ok", "body")
+
+
+def test_bootstrap_degraded_optional_exits_0(monkeypatch, tmp_path, capsys):
+    config = tmp_path / "sources.yaml"
+    config.write_text(
+        'pages:\n  - id: "page-a"\n    expected_title: "Ok"\n  - id: "page-b"\n    required: false\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("NOTION_TOKEN", "test-token-not-a-real-secret")
+    monkeypatch.setattr("luna.cli.NotionReader", DegradedReader)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["luna", "bootstrap", "--config", str(config)])
+
+    from luna.cli import main
+
+    main()
+    out = capsys.readouterr().out
+    assert "Manifest status: DEGRADED" in out
+
+
+def test_bootstrap_does_not_print_fake_token(monkeypatch, tmp_path, capsys):
+    FAKE = "secret_TEST_FAKE_TOKEN_XYZ"
+    config = tmp_path / "sources.yaml"
+    config.write_text('pages:\n  - id: "page-a"\n', encoding="utf-8")
+
+    class TokenReader:
+        def __init__(self, token):
+            self.token = token
+
+        def fetch_page(self, page_id):
+            raise RuntimeError(f"failed {FAKE}")
+
+    monkeypatch.setenv("NOTION_TOKEN", "test-token-not-a-real-secret")
+    monkeypatch.setattr("luna.cli.NotionReader", TokenReader)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["luna", "bootstrap", "--config", str(config)])
+
+    from luna.cli import main
+
+    with pytest.raises(SystemExit):
+        main()
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
+    assert FAKE not in combined

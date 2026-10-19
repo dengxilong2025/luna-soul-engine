@@ -12,6 +12,7 @@ def load_config(path: str | Path = "config/sources.yaml") -> dict[str, Any]:
       title: display-title fallback (optional)
       required: whether a read/title check failure aborts bootstrap (default true)
       expected_title: exact title expected from Notion (optional)
+      role: optional role label (non-empty string)
     """
     config_path = Path(path)
     if not config_path.exists():
@@ -37,6 +38,10 @@ def load_config(path: str | Path = "config/sources.yaml") -> dict[str, Any]:
             raise ValueError(f"pages[{index}].expected_title must be a string.")
         if "required" in page and not isinstance(page["required"], bool):
             raise ValueError(f"pages[{index}].required must be true or false.")
+        if "role" in page:
+            if not isinstance(page["role"], str) or not page["role"].strip():
+                raise ValueError(f"pages[{index}].role must be a non-empty string.")
+            page["role"] = page["role"].strip()
         page["id"] = page_id
         page.setdefault("required", True)
     data["pages"] = pages
